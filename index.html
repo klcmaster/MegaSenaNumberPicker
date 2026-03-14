@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Selecionador de Números (6/60) - Voz e Sons</title>
+    
+    <!-- Configurações PWA -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#3b82f6">
+    <link rel="apple-touch-icon" href="icon-192.png">
+
+    <!-- Carrega o Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Carrega a biblioteca Tone.js para geração de som (bipes) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f7f7;
+            min-height: 100vh;
+        }
+        .number-cell {
+            width: 100%;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.9rem;
+            transition: all 0.1s ease;
+            user-select: none;
+            border: 2px solid #e5e7eb;
+            border-radius: 0.5rem;
+            cursor: pointer;
+        }
+        .cell-available {
+            background-color: #ffffff;
+            color: #3b82f6;
+        }
+        .cell-available:hover {
+            background-color: #e0f2fe;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transform: translateY(-1px);
+        }
+        .cell-temp-selected {
+            background-color: #a8a8a8;
+            color: #4a4a4a;
+            cursor: default;
+            pointer-events: none;
+            border-color: #737373;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .cell-used {
+            background-color: #4b5563;
+            color: #f3f4f6;
+            cursor: not-allowed;
+            pointer-events: none;
+            border-color: #374151;
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
+            opacity: 0.8;
+            transform: none !important;
+        }
+        .registered-game {
+            background-color: #ffffff;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            margin-bottom: 0.75rem;
+            font-weight: 500;
+            color: #1f2937;
+            border-left: 5px solid #10b981;
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8">
+
+    <div class="max-w-4xl mx-auto bg-white p-6 sm:p-8 rounded-xl shadow-2xl">
+        <h1 class="text-3xl sm:text-4xl font-extrabold text-gray-800 mb-2 text-center">
+            Escolha Seus Números (6/60)
+        </h1>
+        <p class="text-center text-lg font-semibold text-red-600 mb-4">
+            Atenção: Números selecionados ficam permanentemente indisponíveis!
+        </p>
+        
+        <div class="flex flex-col sm:flex-row justify-center items-center gap-4 mb-8 p-4 bg-gray-50 rounded-lg border">
+            <button id="voice-btn" 
+                    class="px-6 py-3 bg-blue-600 text-white font-bold rounded-full shadow-lg hover:bg-blue-700 transition duration-150 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed">
+                🎙️ Ativar Microfone
+            </button>
+            <div id="voice-status" class="text-sm text-gray-700 font-medium">
+                Status: Inativo
+            </div>
+            <div id="repetition-status" class="text-xs text-gray-500 italic">
+                Repetições: 0/10
+            </div>
+        </div>
+
+        <div class="bg-blue-50 p-4 rounded-lg border border-blue-200 shadow-inner mb-8">
+            <p class="text-lg font-semibold text-blue-800 mb-2">
+                Números Selecionados (<span id="selected-count">0</span> de 6):
+            </p>
+            <div id="temporary-set" class="min-h-8 text-2xl font-mono text-blue-900 tracking-wider">
+                --
+            </div>
+        </div>
+
+        <div id="table-container" class="grid grid-cols-10 gap-2 sm:gap-3 mb-10"></div>
+        
+        <div class="text-center text-sm font-medium text-gray-600 mb-6">
+            Números ainda disponíveis: <span id="available-count" class="font-bold text-gray-800">60</span>
+        </div>
+
+        <div class="mt-8">
+            <h2 class="text-xl font-bold text-gray-700 mb-4 border-b pb-2">
+                Jogos Registrados
+            </h2>
+            <div id="registered-list" class="space-y-3">
+                <p id="no-games-message" class="text-gray-500 italic">Nenhum jogo registrado ainda.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Registro do Service Worker para PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('SW registrado!', reg))
+                    .catch(err => console.log('Erro no SW', err));
+            });
+        }
+
+        let temporarySelectedNumbers = [];
+        const permanentlyUsedNumbers = new Set();
+        const MAX_SELECTION = 6;
+        const TOTAL_NUMBERS = 60;
+        const REPETITION_LIMIT = 10;
+        let disabledRepetitionCount = 0; 
+        let ttsLoopActive = false;
+        
+        const tableContainer = document.getElementById('table-container');
+        const temporarySetDisplay = document.getElementById('temporary-set');
+        const registeredList = document.getElementById('registered-list');
+        const selectedCountSpan = document.getElementById('selected-count');
+        const noGamesMessage = document.getElementById('no-games-message');
+        const availableCountSpan = document.getElementById('available-count');
+        const repetitionStatusDiv = document.getElementById('repetition-status');
+        const voiceBtn = document.getElementById('voice-btn');
+        const voiceStatus = document.getElementById('voice-status');
+
+        let recognition;
+        let isListening = false;
+        let audioContextInitialized = false;
+
+        // Mapeamento corrigido para 1-9 (sem o zero) conforme solicitado para celular
+        const numberWords = {
+            'um': 1, 'dois': 2, 'três': 3, 'quatro': 4, 'cinco': 5, 'seis': 6, 'sete': 7, 
+            'oito': 8, 'nove': 9, 'dez': 10, 'onze': 11, 'doze': 12, 'treze': 13, 'catorze': 14, 
+            'quinze': 15, 'dezesseis': 16, 'dezessete': 17, 'dezoito': 18, 'dezenove': 19, 'vinte': 20,
+            'vinte e um': 21, 'vinte e dois': 22, 'vinte e três': 23, 'vinte e quatro': 24, 'vinte e cinco': 25,
+            'vinte e seis': 26, 'vinte e sete': 27, 'vinte e oito': 28, 'vinte e nove': 29, 'trinta': 30,
+            'trinta e um': 31, 'trinta e dois': 32, 'trinta e três': 33, 'trinta e quatro': 34, 'trinta e cinco': 35,
+            'trinta e seis': 36, 'trinta e sete': 37, 'trinta e oito': 38, 'trinta e nove': 39, 'quarenta': 40,
+            'quarenta e um': 41, 'quarenta e dois': 42, 'quarenta e três': 43, 'quarenta e quatro': 44, 'quarenta e cinco': 45,
+            'quarenta e seis': 46, 'quarenta e sete': 47, 'quarenta e oito': 48, 'quarenta e nove': 49, 'cinquenta': 50,
+            'cinquenta e um': 51, 'cinquenta e dois': 52, 'cinquenta e três': 53, 'cinquenta e quatro': 54, 'cinquenta e cinco': 55,
+            'cinquenta e seis': 56, 'cinquenta e sete': 57, 'cinquenta e oito': 58, 'cinquenta e nove': 59, 'sessenta': 60
+        };
+
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+        }
+
+        function updateCounts() {
+            const available = TOTAL_NUMBERS - permanentlyUsedNumbers.size;
+            availableCountSpan.textContent = available;
+            repetitionStatusDiv.textContent = `Repetições: ${disabledRepetitionCount}/${REPETITION_LIMIT}`;
+            return available;
+        }
+
+        function initAudioContext() {
+            if (audioContextInitialized || typeof Tone === 'undefined') return;
+            try {
+                Tone.start(); 
+                audioContextInitialized = true;
+            } catch (e) {
+                console.error("Erro áudio:", e);
+            }
+        }
+
+        function playSound(beeps, isFinal = false) {
+            if (!audioContextInitialized) return;
+            const beepDuration = isFinal ? 0.2 : 0.1;
+            const beepFrequency = isFinal ? 300 : 500; 
+            const synthGain = isFinal ? 0.7 : 0.4; 
+            const synth = new Tone.Synth({ oscillator: { type: "square" } }).toDestination();
+            synth.volume.value = Tone.gainToDb(synthGain);
+            const now = Tone.now();
+            for (let i = 0; i < beeps; i++) {
+                synth.triggerAttackRelease(beepFrequency, beepDuration, now + i * (beepDuration + 0.05));
+            }
+        }
+
+        function updateCellState(cell, stateClass) {
+            cell.classList.remove('cell-available', 'cell-temp-selected', 'cell-used');
+            cell.classList.add(stateClass);
+        }
+
+        function updateTemporaryDisplay() {
+            temporarySelectedNumbers.sort((a, b) => a - b);
+            temporarySetDisplay.textContent = temporarySelectedNumbers.length > 0 
+                ? temporarySelectedNumbers.map(n => n.toString().padStart(2, '0')).join(' - ')
+                : '--';
+            selectedCountSpan.textContent = temporarySelectedNumbers.length;
+        }
+
+        function initializeTable() {
+            for (let i = 1; i <= 60; i++) {
+                const cell = document.createElement('div');
+                cell.textContent = i.toString().padStart(2, '0');
+                cell.id = `num-${i}`;
+                cell.classList.add('number-cell'); 
+                cell.setAttribute('data-number', i);
+                updateCellState(cell, 'cell-available');
+                cell.addEventListener('click', () => selectNumber(i, false));
+                tableContainer.appendChild(cell);
+            }
+        }
+
+        function speakAvailableNumbers(shouldStartLoop = true) {
+            if (window.speechSynthesis.speaking) return;
+            const available = [];
+            for (let i = 1; i <= 60; i++) {
+                if (!permanentlyUsedNumbers.has(i) && !temporarySelectedNumbers.includes(i)) available.push(i);
+            }
+            if (available.length === 0) return;
+            shuffleArray(available);
+            const text = available.join(', ');
+            if (shouldStartLoop) ttsLoopActive = true;
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'pt-BR';
+            utterance.onend = () => { if (ttsLoopActive) setTimeout(() => speakAvailableNumbers(false), 500); };
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function selectNumber(number, isVoice = false) {
+            initAudioContext();
+            if (number < 1 || number > 60 || temporarySelectedNumbers.length >= MAX_SELECTION) return false;
+            if (permanentlyUsedNumbers.has(number) || temporarySelectedNumbers.includes(number)) {
+                if (isVoice) {
+                    if (temporarySelectedNumbers[temporarySelectedNumbers.length-1] === number) {
+                        playSound(1);
+                    } else {
+                        playSound(1);
+                        disabledRepetitionCount++;
+                        if (disabledRepetitionCount >= REPETITION_LIMIT && !ttsLoopActive) speakAvailableNumbers(true);
+                        updateCounts();
+                    }
+                }
+                return false;
+            }
+            const cell = document.getElementById(`num-${number}`);
+            temporarySelectedNumbers.push(number);
+            updateCellState(cell, 'cell-temp-selected');
+            updateTemporaryDisplay();
+            playSound(1);
+            if (isVoice) { window.speechSynthesis.cancel(); ttsLoopActive = false; }
+            if (temporarySelectedNumbers.length === MAX_SELECTION) setTimeout(addSetToList, 700);
+            return true;
+        }
+
+        function addSetToList() {
+            const gameDiv = document.createElement('div');
+            gameDiv.className = 'registered-game';
+            gameDiv.textContent = `Jogo: ${temporarySelectedNumbers.map(n => n.toString().padStart(2, '0')).join(' - ')}`;
+            registeredList.prepend(gameDiv);
+            temporarySelectedNumbers.forEach(num => {
+                permanentlyUsedNumbers.add(num);
+                updateCellState(document.getElementById(`num-${num}`), 'cell-used');
+            });
+            playSound(2);
+            temporarySelectedNumbers = [];
+            updateTemporaryDisplay();
+            if (noGamesMessage) noGamesMessage.style.display = 'none';
+            if (TOTAL_NUMBERS - permanentlyUsedNumbers.size === MAX_SELECTION) finishGame();
+            updateCounts();
+        }
+
+        function finishGame() {
+            window.speechSynthesis.cancel();
+            ttsLoopActive = false;
+            const final = [];
+            for (let i = 1; i <= 60; i++) if (!permanentlyUsedNumbers.has(i)) final.push(i);
+            const gameDiv = document.createElement('div');
+            gameDiv.className = 'registered-game';
+            gameDiv.textContent = `Final (Auto): ${final.map(n => n.toString().padStart(2, '0')).join(' - ')}`;
+            registeredList.prepend(gameDiv);
+            final.forEach(num => {
+                permanentlyUsedNumbers.add(num);
+                updateCellState(document.getElementById(`num-${num}`), 'cell-used');
+            });
+            playSound(3, true);
+            voiceBtn.disabled = true;
+            voiceStatus.textContent = 'Fim do Jogo!';
+        }
+
+        function initVoiceRecognition() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) return;
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.lang = 'pt-BR';
+            recognition.onresult = (event) => {
+                const transcript = event.results[event.results.length - 1][0].transcript.toLowerCase();
+                // Extrai números brutos ou mapeados
+                const words = transcript.split(/\s+/);
+                words.forEach(word => {
+                    const n = parseInt(word, 10);
+                    if (!isNaN(n)) selectNumber(n, true);
+                    else if (numberWords[word]) selectNumber(numberWords[word], true);
+                });
+            };
+            recognition.onend = () => { if (isListening) recognition.start(); };
+            voiceBtn.addEventListener('click', () => {
+                initAudioContext();
+                isListening = !isListening;
+                isListening ? recognition.start() : recognition.stop();
+                voiceBtn.textContent = isListening ? '🔴 Parar Escuta' : '🎙️ Ativar Microfone';
+                voiceStatus.textContent = isListening ? 'Ouvindo...' : 'Inativo';
+            });
+        }
+
+        window.onload = () => { initializeTable(); initVoiceRecognition(); };
+    </script>
+</body>
+</html>
