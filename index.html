@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Selecionador de Números (6/60) - Voz e Sons</title>
+    <title>Selecionador de Números (6/60) - PWA</title>
     
     <!-- Configurações PWA -->
     <link rel="manifest" href="manifest.json">
@@ -15,11 +15,50 @@
     <!-- Carrega a biblioteca Tone.js para geração de som (bipes) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap');
+        
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #f7f7f7;
-            min-height: 100vh;
+            transition: background-color 0.3s ease, color 0.3s ease;
         }
+
+        /* Estilos Modo Claro (Padrão) */
+        body.light {
+            background-color: #f7f7f7;
+            color: #1f2937;
+        }
+        .app-card {
+            background-color: #ffffff;
+            color: #1f2937;
+        }
+
+        /* Estilos Modo Escuro */
+        body.dark {
+            background-color: #111827;
+            color: #f3f4f6;
+        }
+        body.dark .app-card {
+            background-color: #1f2937;
+            color: #f3f4f6;
+        }
+        body.dark .number-cell.cell-available {
+            background-color: #374151;
+            color: #60a5fa;
+            border-color: #4b5563;
+        }
+        body.dark .number-cell.cell-available:hover {
+            background-color: #4b5563;
+        }
+        body.dark .registered-game {
+            background-color: #374151;
+            color: #f3f4f6;
+            border-left-color: #10b981;
+        }
+        body.dark .bg-gray-50 { background-color: #374151; border-color: #4b5563; }
+        body.dark .bg-blue-50 { background-color: #1e3a8a; border-color: #2563eb; }
+        body.dark .text-blue-800, body.dark .text-blue-900 { color: #bfdbfe; }
+        body.dark .text-gray-800, body.dark .text-gray-700 { color: #e5e7eb; }
+
         .number-cell {
             width: 100%;
             height: 40px;
@@ -38,11 +77,6 @@
             background-color: #ffffff;
             color: #3b82f6;
         }
-        .cell-available:hover {
-            background-color: #e0f2fe;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            transform: translateY(-1px);
-        }
         .cell-temp-selected {
             background-color: #a8a8a8;
             color: #4a4a4a;
@@ -59,7 +93,6 @@
             border-color: #374151;
             box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
             opacity: 0.8;
-            transform: none !important;
         }
         .registered-game {
             background-color: #ffffff;
@@ -68,19 +101,51 @@
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
             margin-bottom: 0.75rem;
             font-weight: 500;
-            color: #1f2937;
-            border-left: 5px solid #10b981;
+            border-left-width: 5px;
+            border-left-color: #10b981;
+        }
+        
+        #confirm-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
         }
     </style>
 </head>
-<body class="p-4 sm:p-8">
+<body class="light p-4 sm:p-8">
 
-    <div class="max-w-4xl mx-auto bg-white p-6 sm:p-8 rounded-xl shadow-2xl">
-        <h1 class="text-3xl sm:text-4xl font-extrabold text-gray-800 mb-2 text-center">
+    <!-- Modal de Confirmação -->
+    <div id="confirm-modal">
+        <div class="app-card p-6 rounded-xl shadow-2xl max-w-sm w-full mx-4 border border-gray-300">
+            <h3 class="text-xl font-bold mb-4">Reiniciar Jogo?</h3>
+            <p class="mb-6 opacity-80">Isso apagará permanentemente todos os registros salvos. Deseja continuar?</p>
+            <div class="flex justify-end gap-3">
+                <button onclick="closeModal()" class="px-4 py-2 rounded-lg bg-gray-200 text-gray-800 font-medium">Cancelar</button>
+                <button onclick="resetApp()" class="px-4 py-2 rounded-lg bg-red-600 text-white font-medium">Reiniciar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-4xl mx-auto app-card p-6 sm:p-8 rounded-xl shadow-2xl relative">
+        <!-- Controles de Topo -->
+        <div class="absolute top-4 right-4 flex gap-2">
+            <button id="theme-toggle" class="p-2 rounded-full bg-gray-200 dark:bg-gray-700 hover:opacity-80 transition" title="Alternar Tema">
+                🌓
+            </button>
+            <button id="reset-trigger" class="p-2 rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition" title="Reiniciar Tudo">
+                🗑️
+            </button>
+        </div>
+
+        <h1 class="text-3xl sm:text-4xl font-extrabold mb-2 text-center">
             Escolha Seus Números (6/60)
         </h1>
-        <p class="text-center text-lg font-semibold text-red-600 mb-4">
-            Atenção: Números selecionados ficam permanentemente indisponíveis!
+        <p class="text-center text-lg font-semibold text-red-500 mb-4">
+            Atenção: Números selecionados ficam indisponíveis!
         </p>
         
         <div class="flex flex-col sm:flex-row justify-center items-center gap-4 mb-8 p-4 bg-gray-50 rounded-lg border">
@@ -88,10 +153,10 @@
                     class="px-6 py-3 bg-blue-600 text-white font-bold rounded-full shadow-lg hover:bg-blue-700 transition duration-150 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed">
                 🎙️ Ativar Microfone
             </button>
-            <div id="voice-status" class="text-sm text-gray-700 font-medium">
+            <div id="voice-status" class="text-sm font-medium">
                 Status: Inativo
             </div>
-            <div id="repetition-status" class="text-xs text-gray-500 italic">
+            <div id="repetition-status" class="text-xs opacity-60 italic">
                 Repetições: 0/10
             </div>
         </div>
@@ -107,38 +172,39 @@
 
         <div id="table-container" class="grid grid-cols-10 gap-2 sm:gap-3 mb-10"></div>
         
-        <div class="text-center text-sm font-medium text-gray-600 mb-6">
-            Números ainda disponíveis: <span id="available-count" class="font-bold text-gray-800">60</span>
+        <div class="text-center text-sm font-medium opacity-70 mb-6">
+            Números ainda disponíveis: <span id="available-count" class="font-bold opacity-100">60</span>
         </div>
 
         <div class="mt-8">
-            <h2 class="text-xl font-bold text-gray-700 mb-4 border-b pb-2">
+            <h2 class="text-xl font-bold mb-4 border-b pb-2 opacity-80">
                 Jogos Registrados
             </h2>
             <div id="registered-list" class="space-y-3">
-                <p id="no-games-message" class="text-gray-500 italic">Nenhum jogo registrado ainda.</p>
+                <p id="no-games-message" class="italic opacity-50">Nenhum jogo registrado ainda.</p>
             </div>
         </div>
     </div>
 
     <script>
-        // Registro do Service Worker para PWA
+        // Service Worker Registration
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js')
-                    .then(reg => console.log('SW registrado!', reg))
-                    .catch(err => console.log('Erro no SW', err));
+                navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW Error', err));
             });
         }
 
+        // App State
         let temporarySelectedNumbers = [];
-        const permanentlyUsedNumbers = new Set();
+        let permanentlyUsedNumbers = new Set();
+        let registeredGames = []; // Stores strings of selected numbers
         const MAX_SELECTION = 6;
         const TOTAL_NUMBERS = 60;
         const REPETITION_LIMIT = 10;
         let disabledRepetitionCount = 0; 
         let ttsLoopActive = false;
         
+        // DOM Elements
         const tableContainer = document.getElementById('table-container');
         const temporarySetDisplay = document.getElementById('temporary-set');
         const registeredList = document.getElementById('registered-list');
@@ -148,12 +214,12 @@
         const repetitionStatusDiv = document.getElementById('repetition-status');
         const voiceBtn = document.getElementById('voice-btn');
         const voiceStatus = document.getElementById('voice-status');
+        const modal = document.getElementById('confirm-modal');
 
         let recognition;
         let isListening = false;
         let audioContextInitialized = false;
 
-        // Mapeamento corrigido para 1-9 (sem o zero) conforme solicitado para celular
         const numberWords = {
             'um': 1, 'dois': 2, 'três': 3, 'quatro': 4, 'cinco': 5, 'seis': 6, 'sete': 7, 
             'oito': 8, 'nove': 9, 'dez': 10, 'onze': 11, 'doze': 12, 'treze': 13, 'catorze': 14, 
@@ -167,6 +233,66 @@
             'cinquenta e um': 51, 'cinquenta e dois': 52, 'cinquenta e três': 53, 'cinquenta e quatro': 54, 'cinquenta e cinco': 55,
             'cinquenta e seis': 56, 'cinquenta e sete': 57, 'cinquenta e oito': 58, 'cinquenta e nove': 59, 'sessenta': 60
         };
+
+        // --- Persistence ---
+        function saveData() {
+            const data = {
+                used: Array.from(permanentlyUsedNumbers),
+                games: registeredGames, // Array of number strings
+                theme: document.body.classList.contains('dark') ? 'dark' : 'light'
+            };
+            localStorage.setItem('seletor660_data_v2', JSON.stringify(data));
+        }
+
+        function loadData() {
+            const saved = localStorage.getItem('seletor660_data_v2');
+            if (saved) {
+                const data = JSON.parse(saved);
+                permanentlyUsedNumbers = new Set(data.used || []);
+                registeredGames = data.games || [];
+                
+                if (data.theme === 'dark') {
+                    document.body.className = 'dark';
+                } else {
+                    document.body.className = 'light';
+                }
+                
+                // Clear initial list state
+                registeredList.innerHTML = '';
+                if (registeredGames.length > 0) {
+                    registeredGames.forEach((numbersStr, index) => {
+                        renderGameInList(numbersStr, index + 1);
+                    });
+                    if (noGamesMessage) noGamesMessage.style.display = 'none';
+                } else {
+                    registeredList.appendChild(noGamesMessage);
+                    noGamesMessage.style.display = 'block';
+                }
+            }
+        }
+
+        function resetApp() {
+            localStorage.removeItem('seletor660_data_v2');
+            window.location.reload();
+        }
+
+        // --- UI Functions ---
+        function openModal() { modal.style.display = 'flex'; }
+        function closeModal() { modal.style.display = 'none'; }
+
+        function toggleTheme() {
+            document.body.classList.toggle('dark');
+            document.body.classList.toggle('light');
+            saveData();
+        }
+
+        function renderGameInList(numbersStr, gameId) {
+            const gameDiv = document.createElement('div');
+            gameDiv.className = 'registered-game';
+            gameDiv.innerHTML = `<span class="opacity-60 text-sm">Jogo ${gameId}:</span> <br> ${numbersStr}`;
+            // prepend to show latest games first in UI
+            registeredList.prepend(gameDiv);
+        }
 
         function shuffleArray(array) {
             for (let i = array.length - 1; i > 0; i--) {
@@ -184,24 +310,16 @@
 
         function initAudioContext() {
             if (audioContextInitialized || typeof Tone === 'undefined') return;
-            try {
-                Tone.start(); 
-                audioContextInitialized = true;
-            } catch (e) {
-                console.error("Erro áudio:", e);
-            }
+            try { Tone.start(); audioContextInitialized = true; } catch (e) {}
         }
 
         function playSound(beeps, isFinal = false) {
             if (!audioContextInitialized) return;
-            const beepDuration = isFinal ? 0.2 : 0.1;
-            const beepFrequency = isFinal ? 300 : 500; 
-            const synthGain = isFinal ? 0.7 : 0.4; 
             const synth = new Tone.Synth({ oscillator: { type: "square" } }).toDestination();
-            synth.volume.value = Tone.gainToDb(synthGain);
+            synth.volume.value = Tone.gainToDb(isFinal ? 0.7 : 0.4);
             const now = Tone.now();
             for (let i = 0; i < beeps; i++) {
-                synth.triggerAttackRelease(beepFrequency, beepDuration, now + i * (beepDuration + 0.05));
+                synth.triggerAttackRelease(isFinal ? 300 : 500, 0.1, now + i * 0.15);
             }
         }
 
@@ -219,16 +337,23 @@
         }
 
         function initializeTable() {
+            tableContainer.innerHTML = '';
             for (let i = 1; i <= 60; i++) {
                 const cell = document.createElement('div');
                 cell.textContent = i.toString().padStart(2, '0');
                 cell.id = `num-${i}`;
                 cell.classList.add('number-cell'); 
                 cell.setAttribute('data-number', i);
-                updateCellState(cell, 'cell-available');
-                cell.addEventListener('click', () => selectNumber(i, false));
+                
+                if (permanentlyUsedNumbers.has(i)) {
+                    updateCellState(cell, 'cell-used');
+                } else {
+                    updateCellState(cell, 'cell-available');
+                    cell.addEventListener('click', () => selectNumber(i, false));
+                }
                 tableContainer.appendChild(cell);
             }
+            updateCounts();
         }
 
         function speakAvailableNumbers(shouldStartLoop = true) {
@@ -250,12 +375,11 @@
         function selectNumber(number, isVoice = false) {
             initAudioContext();
             if (number < 1 || number > 60 || temporarySelectedNumbers.length >= MAX_SELECTION) return false;
+            
             if (permanentlyUsedNumbers.has(number) || temporarySelectedNumbers.includes(number)) {
                 if (isVoice) {
-                    if (temporarySelectedNumbers[temporarySelectedNumbers.length-1] === number) {
-                        playSound(1);
-                    } else {
-                        playSound(1);
+                    playSound(1);
+                    if (temporarySelectedNumbers[temporarySelectedNumbers.length-1] !== number) {
                         disabledRepetitionCount++;
                         if (disabledRepetitionCount >= REPETITION_LIMIT && !ttsLoopActive) speakAvailableNumbers(true);
                         updateCounts();
@@ -263,29 +387,36 @@
                 }
                 return false;
             }
+
             const cell = document.getElementById(`num-${number}`);
             temporarySelectedNumbers.push(number);
             updateCellState(cell, 'cell-temp-selected');
             updateTemporaryDisplay();
             playSound(1);
+            
             if (isVoice) { window.speechSynthesis.cancel(); ttsLoopActive = false; }
             if (temporarySelectedNumbers.length === MAX_SELECTION) setTimeout(addSetToList, 700);
             return true;
         }
 
         function addSetToList() {
-            const gameDiv = document.createElement('div');
-            gameDiv.className = 'registered-game';
-            gameDiv.textContent = `Jogo: ${temporarySelectedNumbers.map(n => n.toString().padStart(2, '0')).join(' - ')}`;
-            registeredList.prepend(gameDiv);
+            const numbersStr = temporarySelectedNumbers.map(n => n.toString().padStart(2, '0')).join(' - ');
+            registeredGames.push(numbersStr);
+            
+            // Re-render UI list with correct numbering
+            renderGameInList(numbersStr, registeredGames.length);
+            
             temporarySelectedNumbers.forEach(num => {
                 permanentlyUsedNumbers.add(num);
                 updateCellState(document.getElementById(`num-${num}`), 'cell-used');
             });
+            
             playSound(2);
             temporarySelectedNumbers = [];
             updateTemporaryDisplay();
             if (noGamesMessage) noGamesMessage.style.display = 'none';
+            
+            saveData();
             if (TOTAL_NUMBERS - permanentlyUsedNumbers.size === MAX_SELECTION) finishGame();
             updateCounts();
         }
@@ -295,14 +426,17 @@
             ttsLoopActive = false;
             const final = [];
             for (let i = 1; i <= 60; i++) if (!permanentlyUsedNumbers.has(i)) final.push(i);
-            const gameDiv = document.createElement('div');
-            gameDiv.className = 'registered-game';
-            gameDiv.textContent = `Final (Auto): ${final.map(n => n.toString().padStart(2, '0')).join(' - ')}`;
-            registeredList.prepend(gameDiv);
+            
+            const numbersStr = final.map(n => n.toString().padStart(2, '0')).join(' - ');
+            registeredGames.push(numbersStr);
+            renderGameInList(numbersStr, registeredGames.length);
+            
             final.forEach(num => {
                 permanentlyUsedNumbers.add(num);
                 updateCellState(document.getElementById(`num-${num}`), 'cell-used');
             });
+            
+            saveData();
             playSound(3, true);
             voiceBtn.disabled = true;
             voiceStatus.textContent = 'Fim do Jogo!';
@@ -316,7 +450,6 @@
             recognition.lang = 'pt-BR';
             recognition.onresult = (event) => {
                 const transcript = event.results[event.results.length - 1][0].transcript.toLowerCase();
-                // Extrai números brutos ou mapeados
                 const words = transcript.split(/\s+/);
                 words.forEach(word => {
                     const n = parseInt(word, 10);
@@ -325,6 +458,7 @@
                 });
             };
             recognition.onend = () => { if (isListening) recognition.start(); };
+            
             voiceBtn.addEventListener('click', () => {
                 initAudioContext();
                 isListening = !isListening;
@@ -334,7 +468,14 @@
             });
         }
 
-        window.onload = () => { initializeTable(); initVoiceRecognition(); };
+        document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+        document.getElementById('reset-trigger').addEventListener('click', openModal);
+
+        window.onload = () => { 
+            loadData(); 
+            initializeTable(); 
+            initVoiceRecognition(); 
+        };
     </script>
 </body>
 </html>
